@@ -7,9 +7,9 @@ use std::{
 use parking_lot::Mutex;
 
 #[derive(Clone, Copy)]
-struct ProgressSnapshot {
-    downloaded_bytes: u64,
-    instant: Instant,
+pub struct ProgressSnapshot {
+    pub downloaded_bytes: u64,
+    pub instant: Instant,
 }
 
 pub struct SpeedEstimator {
@@ -42,6 +42,10 @@ impl SpeedEstimator {
 
     pub fn download_mbps(&self) -> f64 {
         self.download_bps() as f64 / 1024f64 / 1024f64
+    }
+
+    pub fn snapshots(&self) -> VecDeque<ProgressSnapshot> {
+        self.latest_per_second_snapshots.lock().clone()
     }
 
     pub fn add_snapshot(&self, downloaded_bytes: u64, remaining_bytes: u64, instant: Instant) {
