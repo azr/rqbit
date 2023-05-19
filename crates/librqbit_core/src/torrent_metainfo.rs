@@ -4,7 +4,7 @@ use anyhow::Context;
 use bencode::BencodeDeserializer;
 use buffers::{ByteBuf, ByteString};
 use clone_to_owned::CloneToOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::id20::Id20;
 
@@ -24,7 +24,7 @@ pub fn torrent_from_bytes<'de, ByteBuf: Deserialize<'de>>(
     Ok(t)
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TorrentMetaV1<BufType> {
     pub announce: BufType,
     #[serde(rename = "announce-list")]
@@ -50,7 +50,7 @@ impl<BufType> TorrentMetaV1<BufType> {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TorrentMetaV1Info<BufType> {
     pub name: Option<BufType>,
     pub pieces: BufType,
@@ -196,7 +196,7 @@ impl<BufType: AsRef<[u8]>> TorrentMetaV1Info<BufType> {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TorrentMetaV1File<BufType> {
     pub length: u64,
     pub path: Vec<BufType>,
