@@ -161,11 +161,11 @@ pub enum TorrentMeta {
 
 impl TorrentMeta {
     pub fn magnet_link(&self) -> String {
-        let magnet = Magnet {
+        Magnet {
             info_hash: self.info_hash(),
             trackers: self.trackers(),
-        };
-        todo!()
+        }
+        .to_link()
     }
 
     pub fn info_hash(&self) -> Id20 {
