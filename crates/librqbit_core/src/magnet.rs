@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use hex::ToHex;
 
 use crate::id20::Id20;
 
@@ -39,6 +40,19 @@ impl Magnet {
             }
         }
     }
+
+    pub fn to_link(&self) -> String {
+        let info_hash_hex = self.info_hash.as_string();
+
+        let trackers = self
+            .trackers
+            .iter()
+            .map(|tracker| format!("tr={}", tracker))
+            .collect::<Vec<String>>()
+            .join("&");
+
+        format!("magnet:?xt=urn:btih:{}&{}", info_hash_hex, trackers)
+    }
 }
 
 #[cfg(test)]
@@ -46,6 +60,6 @@ mod tests {
     #[test]
     fn test_parse_magnet_as_url() {
         let magnet = "magnet:?xt=urn:btih:a621779b5e3d486e127c3efbca9b6f8d135f52e5&dn=rutor.info_%D0%92%D0%BE%D0%B9%D0%BD%D0%B0+%D0%B1%D1%83%D0%B4%D1%83%D1%89%D0%B5%D0%B3%D0%BE+%2F+The+Tomorrow+War+%282021%29+WEB-DLRip+%D0%BE%D1%82+MegaPeer+%7C+P+%7C+NewComers&tr=udp://opentor.org:2710&tr=udp://opentor.org:2710&tr=http://retracker.local/announce";
-        dbg!(url::Url::parse(magnet).unwrap());
+        dbg!(Magnet::parse(magnet).unwrap());
     }
 }
