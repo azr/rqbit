@@ -1,9 +1,11 @@
 use anyhow::Context;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
+use axum::Router;
 use buffers::ByteString;
 use dht::{Dht, DhtStats};
+use http::StatusCode;
 use librqbit_core::id20::Id20;
 use librqbit_core::torrent_metainfo::TorrentMetaV1Info;
 use log::warn;
@@ -13,10 +15,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::Router;
-
-use crate::http_api_error::{ApiError};
-use crate::session::{AddTorrentOptions, Session};
+use crate::http_api_error::{ApiError, ApiErrorExt};
+use crate::session::{AddTorrentOptions, AddTorrentResponse, ListOnlyResponse, Session};
 use crate::torrent_manager::TorrentManagerHandle;
 use crate::torrent_state::StatsSnapshot;
 
@@ -65,19 +65,18 @@ impl HttpApi {
             state.api_dht_table().map(axum::Json)
         }
 
-        // async fn torrents_list(State(state): State<ApiState>) -> impl IntoResponse {
-        //     axum::Json(state.api_torrent_list())
-        // }
+        async fn torrents_list(State(state): State<ApiState>) -> impl IntoResponse {
+            axum::Json(state.api_torrent_list())
+        }
 
-        // async fn torrents_post(
-        //     State(state): State<ApiState>,
-        //     Query(params): Query<TorrentAddQueryParams>,
-        //     url: String,
-        // ) -> Result<impl IntoResponse> {
-        //     let opts = params.into_add_torrent_options();
-        //     // state.api_add_torrent(url, Some(opts)).await.map(axum::Json)
-        //     todo!()
-        // }
+        async fn torrents_post(
+            State(state): State<ApiState>,
+            Query(params): Query<TorrentAddQueryParams>,
+            url: String,
+        ) -> Result<impl IntoResponse> {
+            let opts = params.into_add_torrent_options();
+            state.api_add_torrent(url, Some(opts)).await.map(axum::Json)
+        }
 
         async fn torrent_details(
             State(state): State<ApiState>,
@@ -104,7 +103,7 @@ impl HttpApi {
             .route("/", get(api_root))
             .route("/dht/stats", get(dht_stats))
             .route("/dht/table", get(dht_table))
-            // .route("/torrents", get(torrents_list).post(torrents_post))
+            .route("/torrents", get(torrents_list).post(torrents_post))
             .route("/torrents/:id", get(torrent_details))
             .route("/torrents/:id/haves", get(torrent_haves))
             .route("/torrents/:id/stats", get(torrent_stats))
@@ -208,7 +207,7 @@ pub struct ApiInternal {
     dht: Option<Dht>,
     startup_time: Instant,
     pub torrent_managers: RwLock<Vec<TorrentManagerHandle>>, // TODO MOVE IN MY API
-    // session: Arc<Session>,
+    session: Arc<Session>,
 }
 
 type ApiState = Arc<ApiInternal>;
@@ -219,7 +218,7 @@ impl ApiInternal {
             dht: session.get_dht(),
             startup_time: Instant::now(),
             torrent_managers: RwLock::new(Vec::new()),
-            // session,
+            session,
         }
     }
 
@@ -260,60 +259,58 @@ impl ApiInternal {
         make_torrent_details(&info_hash, handle.torrent_state().info(), only_files)
     }
 
-    // pub async fn api_add_torrent(
-    //     &self,
-    //     url: String,
-    //     opts: Option<AddTorrentOptions>,
-    // ) -> Result<ApiAddTorrentResponse> {
-    //     let torrent = self
-    //         .session
-    //         .parse_torrent(&url)
-    //         .await
-    //         .context("failed parsing torrent")
-    //         .with_error_status_code(StatusCode::BAD_REQUEST)?;
+    pub async fn api_add_torrent(
+        &self,
+        url: String,
+        opts: Option<AddTorrentOptions>,
+    ) -> Result<ApiAddTorrentResponse> {
+        let torrent = self
+            .session
+            .parse_torrent(&url)
+            .await
+            .context("failed parsing torrent")
+            .with_error_status_code(StatusCode::BAD_REQUEST)?;
 
-    //     let trackers = torrent.
-
-    //     let response = match self
-    //         .session
-    //         .add_torrent(&torrent.info_hash, , &opts.unwrap_or_default())
-    //         .await
-    //         .context("error adding torrent")
-    //         .with_error_status_code(StatusCode::BAD_REQUEST)?
-    //     {
-    //         AddTorrentResponse::AlreadyManaged(managed) => {
-    //             return Err(anyhow::anyhow!(
-    //                 "{:?} is already managed, downloaded to {:?}",
-    //                 managed.info_hash,
-    //                 managed.output_folder
-    //             ))
-    //             .with_error_status_code(StatusCode::CONFLICT);
-    //         }
-    //         AddTorrentResponse::ListOnly(ListOnlyResponse {
-    //             info_hash,
-    //             info,
-    //             only_files,
-    //         }) => ApiAddTorrentResponse {
-    //             id: None,
-    //             details: make_torrent_details(&info_hash, &info, only_files.as_deref())
-    //                 .context("error making torrent details")?,
-    //         },
-    //         AddTorrentResponse::Added(handle) => {
-    //             let details = make_torrent_details(
-    //                 &handle.torrent_state().info_hash(),
-    //                 handle.torrent_state().info(),
-    //                 handle.only_files(),
-    //             )
-    //             .context("error making torrent details")?;
-    //             let id = self.add_torrent_handle(handle);
-    //             ApiAddTorrentResponse {
-    //                 id: Some(id),
-    //                 details,
-    //             }
-    //         }
-    //     };
-    //     Ok(response)
-    // }
+        let response = match self
+            .session
+            .add_torrent(torrent, &opts.unwrap_or_default())
+            .await
+            .context("error adding torrent")
+            .with_error_status_code(StatusCode::BAD_REQUEST)?
+        {
+            AddTorrentResponse::AlreadyManaged(managed) => {
+                return Err(anyhow::anyhow!(
+                    "{:?} is already managed, downloaded to {:?}",
+                    managed.info_hash,
+                    managed.output_folder
+                ))
+                .with_error_status_code(StatusCode::CONFLICT);
+            }
+            AddTorrentResponse::ListOnly(ListOnlyResponse {
+                info_hash,
+                info,
+                only_files,
+            }) => ApiAddTorrentResponse {
+                id: None,
+                details: make_torrent_details(&info_hash, &info, only_files.as_deref())
+                    .context("error making torrent details")?,
+            },
+            AddTorrentResponse::Added(handle) => {
+                let details = make_torrent_details(
+                    &handle.torrent_state().info_hash(),
+                    handle.torrent_state().info(),
+                    handle.only_files(),
+                )
+                .context("error making torrent details")?;
+                let id = self.add_torrent_handle(handle);
+                ApiAddTorrentResponse {
+                    id: Some(id),
+                    details,
+                }
+            }
+        };
+        Ok(response)
+    }
 
     fn api_dht_stats(&self) -> Result<DhtStats> {
         self.dht

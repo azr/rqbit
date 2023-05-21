@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use hex::ToHex;
 
 use crate::id20::Id20;
 
