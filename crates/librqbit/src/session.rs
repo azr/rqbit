@@ -473,4 +473,41 @@ impl Session {
 
         Ok(AddTorrentResponse::Added(handle))
     }
+
+    pub async fn pause_torrent(&self, info_hash_str: &str) -> anyhow::Result<()> {
+        let info_hash = Id20::from_str(info_hash_str).expect("invalid info_hash");
+        let mut g = self.locked.write();
+        let m = g
+            .torrents
+            .iter_mut()
+            .find(|t| t.info_hash == info_hash)
+            .expect("torrent not found")
+            ;
+
+        match &m.state {
+            ManagedTorrentState::Initializing => todo!(),
+            ManagedTorrentState::Running(state) => {
+                state.pause();
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn unpause_torrent(&self, info_hash_str: &str) -> anyhow::Result<()> {
+        let info_hash = Id20::from_str(info_hash_str).expect("invalid info_hash");
+        let mut g = self.locked.write();
+        let m = g
+            .torrents
+            .iter_mut()
+            .find(|t| t.info_hash == info_hash)
+            .unwrap();
+
+        match &m.state {
+            ManagedTorrentState::Initializing => todo!(),
+            ManagedTorrentState::Running(state) => {
+                state.unpause();
+            }
+        }
+        Ok(())
+    }
 }

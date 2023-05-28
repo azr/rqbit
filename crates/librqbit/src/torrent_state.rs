@@ -168,6 +168,7 @@ impl PeerStates {
 pub struct TorrentStateLocked {
     pub peers: PeerStates,
     pub chunks: ChunkTracker,
+    pub paused: bool,
 }
 
 #[derive(Default, Debug)]
@@ -257,6 +258,7 @@ impl TorrentState {
         needed_bytes: u64,
         spawner: BlockingSpawner,
         options: Option<TorrentStateOptions>,
+        paused: bool,
     ) -> Arc<Self> {
         let options = options.unwrap_or_default();
         let (peer_queue_tx, mut peer_queue_rx) = unbounded_channel();
@@ -267,6 +269,7 @@ impl TorrentState {
             locked: Arc::new(RwLock::new(TorrentStateLocked {
                 peers: Default::default(),
                 chunks: chunk_tracker,
+                paused,
             })),
             files,
             stats: AtomicStats {
@@ -349,8 +352,22 @@ impl TorrentState {
         self.locked.read()
     }
 
+    pub fn pause(self: &Arc<Self>) {
+        let mut g = self.locked.write();
+        g.paused = true
+    }
+
+    pub fn unpause(self: &Arc<Self>,) {
+        let mut g = self.locked.write();
+        g.paused = false
+    }
+
     fn get_next_needed_piece(&self, peer_handle: PeerHandle) -> Option<ValidPieceIndex> {
         let g = self.locked.read();
+        if g.paused {
+            debug!("{} is paused, get_next_needed_piece returns false", self.info_hash.as_string());
+            return None
+        }
         let bf = g.peers.get_live(peer_handle)?.bitfield.as_ref()?;
         for n in g.chunks.iter_needed_pieces() {
             if bf.get(n).map(|v| *v) == Some(true) {
@@ -359,6 +376,12 @@ impl TorrentState {
             }
         }
         None
+    }
+
+    fn am_i_paused(&self) -> bool {
+        self.locked
+            .read()
+            .paused
     }
 
     fn am_i_choked(&self, peer_handle: PeerHandle) -> Option<bool> {
@@ -370,6 +393,10 @@ impl TorrentState {
     }
 
     fn reserve_next_needed_piece(&self, peer_handle: PeerHandle) -> Option<ValidPieceIndex> {
+        if self.am_i_paused() {
+            debug!("{} is paused, can't reserve next piece", self.info_hash.as_string());
+            return None;
+        }
         if self.am_i_choked(peer_handle)? {
             debug!("we are choked by {}, can't reserve next piece", peer_handle);
             return None;
@@ -682,6 +709,13 @@ impl PeerHandler {
                 );
             }
         };
+
+        if self.state.am_i_paused() {
+            anyhow::bail!(
+                "{}: received {:?}, but this torrent is paused. Ignoring.",
+                peer_handle, request
+            );
+        }
 
         let tx = {
             let g = self.state.locked.read();
