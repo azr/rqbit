@@ -36,7 +36,6 @@ struct TorrentManagerOptions {
     only_files: Option<Vec<usize>>,
     peer_id: Option<Id20>,
     overwrite: bool,
-    paused: bool,
 }
 
 pub struct TorrentManagerBuilder {
@@ -139,12 +138,6 @@ impl TorrentManagerHandle {
     }
     pub async fn cancel(&self) -> anyhow::Result<()> {
         todo!()
-    }
-    pub fn pause(&self)  {
-        self.manager.state.pause();
-    }
-    pub fn unpause(&self)  {
-        self.manager.state.unpause();
     }
     pub async fn wait_until_completed(&self) -> anyhow::Result<()> {
         loop {
@@ -284,7 +277,6 @@ impl TorrentManager {
             initial_check_results.needed_bytes,
             spawner,
             Some(state_options),
-            options.paused,
         );
 
         let estimator = Arc::new(SpeedEstimator::new(5));

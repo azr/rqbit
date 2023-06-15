@@ -48,6 +48,11 @@ enum SessionLockedAddTorrentResult {
     Added(usize),
 }
 
+enum SessionLockedRemoveTorrentResult {
+    NotFound,
+    Removed(ManagedTorrent),
+}
+
 impl SessionLocked {
     fn add_torrent(&mut self, torrent: ManagedTorrent) -> SessionLockedAddTorrentResult {
         if let Some(handle) = self.torrents.iter().find(|t| **t == torrent) {
@@ -56,6 +61,13 @@ impl SessionLocked {
         let idx = self.torrents.len();
         self.torrents.push(torrent);
         SessionLockedAddTorrentResult::Added(idx)
+    }
+    fn remove_torrent(&mut self, info_hash: Id20) -> SessionLockedRemoveTorrentResult {
+        if let Some(pos) = self.torrents.iter().position(|t| t.info_hash == info_hash) {
+            SessionLockedRemoveTorrentResult::Removed(self.torrents.remove(pos))
+        } else {
+            SessionLockedRemoveTorrentResult::NotFound
+        }
     }
 }
 
@@ -126,6 +138,7 @@ pub struct AddTorrentOptions {
     pub sub_folder: Option<String>,
     pub peer_opts: Option<PeerConnectionOptions>,
     pub force_tracker_interval: Option<Duration>,
+    pub paused: bool,
 }
 
 pub struct ListOnlyResponse {
@@ -474,40 +487,20 @@ impl Session {
         Ok(AddTorrentResponse::Added(handle))
     }
 
-    pub async fn pause_torrent(&self, info_hash_str: &str) -> anyhow::Result<()> {
+    pub async fn stop_torrent(&self, info_hash_str: &str) -> anyhow::Result<()> {
         let info_hash = Id20::from_str(info_hash_str).expect("invalid info_hash");
         let mut g = self.locked.write();
-        let m = g
-            .torrents
-            .iter_mut()
-            .find(|t| t.info_hash == info_hash)
-            .expect("torrent not found")
-            ;
-
-        match &m.state {
-            ManagedTorrentState::Initializing => todo!(),
-            ManagedTorrentState::Running(state) => {
-                state.pause();
+        match g.remove_torrent(info_hash) {
+            SessionLockedRemoveTorrentResult::NotFound => todo!("not found"),
+            SessionLockedRemoveTorrentResult::Removed(t) => {
+                match &t.state {
+                    ManagedTorrentState::Initializing => todo!(),
+                    ManagedTorrentState::Running(state) => {
+                        state.cancel().await?;
+                    },
+                }
             }
-        }
-        Ok(())
-    }
-
-    pub async fn unpause_torrent(&self, info_hash_str: &str) -> anyhow::Result<()> {
-        let info_hash = Id20::from_str(info_hash_str).expect("invalid info_hash");
-        let mut g = self.locked.write();
-        let m = g
-            .torrents
-            .iter_mut()
-            .find(|t| t.info_hash == info_hash)
-            .unwrap();
-
-        match &m.state {
-            ManagedTorrentState::Initializing => todo!(),
-            ManagedTorrentState::Running(state) => {
-                state.unpause();
-            }
-        }
+        }        
         Ok(())
     }
 }
