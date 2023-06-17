@@ -257,6 +257,7 @@ impl TorrentState {
         needed_bytes: u64,
         spawner: BlockingSpawner,
         options: Option<TorrentStateOptions>,
+        stop: Arc<std::sync::atomic::AtomicBool>,
     ) -> Arc<Self> {
         let options = options.unwrap_or_default();
         let (peer_queue_tx, mut peer_queue_rx) = unbounded_channel();
@@ -281,10 +282,14 @@ impl TorrentState {
             peer_semaphore: Semaphore::new(128),
             peer_queue_tx,
         });
+        let peer_added_stop = stop.clone();
         spawn("peer adder", {
             let state = state.clone();
             async move {
                 loop {
+                    if peer_added_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        anyhow::bail!("closing peer_added, stopping")
+                    }
                     let (addr, out_rx) = peer_queue_rx.recv().await.unwrap();
 
                     let permit = state.peer_semaphore.acquire().await.unwrap(); // TODO: IS THIS EVEN NECESSARY ??
@@ -316,8 +321,9 @@ impl TorrentState {
                     );
 
                     permit.forget();
+                    let stop = stop.clone();
                     spawn(format!("manage_peer({addr})"), async move {
-                        if let Err(e) = peer_connection.manage_peer(out_rx).await {
+                        if let Err(e) = peer_connection.manage_peer(stop, out_rx).await {
                             debug!("error managing peer {}: {:#}", addr, e)
                         };
                         let state = peer_connection.into_handler().state;

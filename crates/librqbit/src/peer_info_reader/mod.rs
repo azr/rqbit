@@ -30,6 +30,7 @@ pub async fn read_metainfo_from_peer(
     info_hash: Id20,
     peer_connection_options: Option<PeerConnectionOptions>,
     spawner: BlockingSpawner,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<TorrentMetaV1Info<ByteString>> {
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<anyhow::Result<TorrentMetaV1Info<ByteString>>>();
@@ -51,7 +52,7 @@ pub async fn read_metainfo_from_peer(
     );
 
     let result_reader = async move { result_rx.await? };
-    let connection_runner = async move { connection.manage_peer(writer_rx).await };
+    let connection_runner = async move { connection.manage_peer(stop, writer_rx).await };
 
     tokio::select! {
         result = result_reader => result,

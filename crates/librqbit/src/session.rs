@@ -1,4 +1,6 @@
-use std::{fs::File, io::Read, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
+use std::{
+    fs::File, io::Read, net::SocketAddr, ops::Deref, path::PathBuf, str::FromStr, time::Duration, sync::{atomic::AtomicBool, Arc},
+};
 
 use anyhow::Context;
 use buffers::ByteString;
@@ -48,7 +50,8 @@ enum SessionLockedAddTorrentResult {
     Added(usize),
 }
 
-enum SessionLockedRemoveTorrentResult {
+pub enum StopTorrentResult {
+    TorrentInitializing,
     NotFound,
     Removed(ManagedTorrent),
 }
@@ -62,11 +65,25 @@ impl SessionLocked {
         self.torrents.push(torrent);
         SessionLockedAddTorrentResult::Added(idx)
     }
-    fn remove_torrent(&mut self, info_hash: Id20) -> SessionLockedRemoveTorrentResult {
-        if let Some(pos) = self.torrents.iter().position(|t| t.info_hash == info_hash) {
-            SessionLockedRemoveTorrentResult::Removed(self.torrents.remove(pos))
+    fn stop_torrent(&mut self, info_hash: Id20) -> StopTorrentResult {
+        if let Some(torrent) = self
+            .torrents
+            .clone()
+            .iter()
+            .find(|t| t.info_hash == info_hash.clone())
+        {
+            match &torrent.state {
+                ManagedTorrentState::Initializing => {
+                    StopTorrentResult::TorrentInitializing
+                }
+                ManagedTorrentState::Running(handle) => {
+                    handle.cancel();
+                    self.torrents.retain(|t| t.info_hash != info_hash.clone());
+                    StopTorrentResult::Removed(torrent.deref().clone())
+                }
+            }
         } else {
-            SessionLockedRemoveTorrentResult::NotFound
+            StopTorrentResult::NotFound
         }
     }
 }
@@ -305,6 +322,7 @@ impl Session {
             info_hash,
             dht_rx,
             Some(self.peer_opts),
+            Arc::new(AtomicBool::new(false)), // this is a oneof
         )
         .await
         {
@@ -337,6 +355,7 @@ impl Session {
             info_hash,
             dht_rx,
             Some(self.peer_opts),
+            Arc::new(AtomicBool::new(false)), // this is a oneof
         )
         .await
         {
@@ -476,6 +495,9 @@ impl Session {
                 let handle = handle.clone();
                 async move {
                     while let Some(peer) = dht_peer_rx.next().await {
+                        if handle.canceled() { // TODO: some sort of select ?
+                            return Ok(());
+                        }
                         handle.add_peer(peer);
                     }
                     warn!("dht was closed");
@@ -487,20 +509,9 @@ impl Session {
         Ok(AddTorrentResponse::Added(handle))
     }
 
-    pub async fn stop_torrent(&self, info_hash_str: &str) -> anyhow::Result<()> {
+    pub fn stop_torrent(&self, info_hash_str: &str) -> StopTorrentResult {
         let info_hash = Id20::from_str(info_hash_str).expect("invalid info_hash");
         let mut g = self.locked.write();
-        match g.remove_torrent(info_hash) {
-            SessionLockedRemoveTorrentResult::NotFound => todo!("not found"),
-            SessionLockedRemoveTorrentResult::Removed(t) => {
-                match &t.state {
-                    ManagedTorrentState::Initializing => todo!(),
-                    ManagedTorrentState::Running(state) => {
-                        state.cancel().await?;
-                    },
-                }
-            }
-        }        
-        Ok(())
+        g.stop_torrent(info_hash)
     }
 }

@@ -28,6 +28,7 @@ pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unp
     info_hash: Id20,
     mut addrs: A,
     peer_connection_options: Option<PeerConnectionOptions>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> ReadMetainfoResult<A> {
     let mut seen = HashSet::<SocketAddr>::new();
     let first_addr = match addrs.next().await {
@@ -40,6 +41,7 @@ pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unp
 
     let read_info_guarded = |addr| {
         let semaphore = &semaphore;
+        let stop = stop.clone();
         async move {
             let token = semaphore.acquire().await?;
             let ret = peer_info_reader::read_metainfo_from_peer(
@@ -48,6 +50,7 @@ pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unp
                 info_hash,
                 peer_connection_options,
                 BlockingSpawner::new(true),
+                stop,
             )
             .await
             .with_context(|| format!("error reading metainfo from {addr}"));

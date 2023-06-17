@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, time::Duration, sync::{atomic::AtomicBool, Arc}};
 
 use anyhow::Context;
 use buffers::{ByteBuf, ByteString};
@@ -111,6 +111,7 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
     }
     pub async fn manage_peer(
         &self,
+        stop: Arc<AtomicBool>,
         mut outgoing_chan: tokio::sync::mpsc::UnboundedReceiver<WriterRequest>,
     ) -> anyhow::Result<()> {
         use tokio::io::AsyncReadExt;
@@ -198,6 +199,7 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
 
         let (mut read_half, mut write_half) = tokio::io::split(conn);
 
+        let stop_writer = stop.clone();
         let writer = async move {
             let keep_alive_interval = self
                 .options
@@ -222,8 +224,16 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
                     Ok(None) => {
                         anyhow::bail!("closing writer, channel closed")
                     }
-                    Err(_) => WriterRequest::Message(MessageOwned::KeepAlive),
+                    Err(_) => {
+                        if stop_writer.load(std::sync::atomic::Ordering::Relaxed) {
+                            anyhow::bail!("closing writer, stopping")
+                        }
+                        WriterRequest::Message(MessageOwned::KeepAlive)
+                    },
                 };
+                if stop_writer.load(std::sync::atomic::Ordering::Relaxed) {
+                    anyhow::bail!("closing writer, stopping")
+                }
 
                 let mut uploaded_add = None;
 
@@ -266,10 +276,15 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
             Ok::<_, anyhow::Error>(())
         };
 
+        let stop_reader = stop.clone();
         let reader = async move {
             loop {
                 let (message, size) = read_one!(read_half, read_buf, read_so_far, rwtimeout);
                 trace!("received from {}: {:?}", self.addr, &message);
+
+                if stop_reader.load(std::sync::atomic::Ordering::Relaxed) {
+                    anyhow::bail!("closing writer, stopping")
+                }
 
                 self.handler
                     .on_received_message(message)

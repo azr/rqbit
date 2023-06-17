@@ -3,7 +3,7 @@ use std::{
     fs::{File, OpenOptions},
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
@@ -136,8 +136,11 @@ impl TorrentManagerHandle {
     pub fn speed_estimator(&self) -> &Arc<SpeedEstimator> {
         &self.manager.speed_estimator
     }
-    pub async fn cancel(&self) -> anyhow::Result<()> {
-        todo!()
+    pub fn cancel(&self) {
+        self.manager.stop.store(true, std::sync::atomic::Ordering::Relaxed)
+    }
+    pub fn canceled(&self) -> bool {
+        false
     }
     pub async fn wait_until_completed(&self) -> anyhow::Result<()> {
         loop {
@@ -152,6 +155,7 @@ struct TorrentManager {
     speed_estimator: Arc<SpeedEstimator>,
     trackers: Mutex<HashSet<Url>>,
     options: TorrentManagerOptions,
+    stop: Arc<AtomicBool>,
 }
 
 fn make_lengths<ByteBuf: AsRef<[u8]>>(
@@ -266,6 +270,7 @@ impl TorrentManager {
             ..Default::default()
         };
 
+        let stop = Arc::new(AtomicBool::new(false));
         let state = TorrentState::new(
             info,
             info_hash,
@@ -277,6 +282,7 @@ impl TorrentManager {
             initial_check_results.needed_bytes,
             spawner,
             Some(state_options),
+            stop.clone(),
         );
 
         let estimator = Arc::new(SpeedEstimator::new(5));
@@ -286,12 +292,17 @@ impl TorrentManager {
             speed_estimator: estimator.clone(),
             trackers: Mutex::new(HashSet::new()),
             options,
+            stop: stop.clone(),
         });
 
+        let stop_speed_estimator = stop.clone();
         spawn("speed estimator updater", {
             let state = mgr.state.clone();
             async move {
                 loop {
+                    if stop_speed_estimator.load(std::sync::atomic::Ordering::Relaxed) {
+                        return Ok(());
+                    }
                     let stats = state.stats_snapshot();
                     let fetched = state.stats_snapshot().fetched_bytes;
                     let uploaded = state.stats_snapshot().uploaded_bytes;
