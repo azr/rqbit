@@ -288,6 +288,7 @@ impl TorrentState {
             async move {
                 loop {
                     if peer_added_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        trace!("closing peer_adder for {}", info_hash.as_string());
                         anyhow::bail!("closing peer_added, stopping")
                     }
                     let (addr, out_rx) = peer_queue_rx.recv().await.unwrap();

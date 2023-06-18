@@ -10,7 +10,7 @@ use librqbit_core::{
     peer_id::generate_peer_id,
     torrent_metainfo::{torrent_from_bytes, TorrentMetaV1, TorrentMetaV1Info, TorrentMetaV1Owned},
 };
-use log::{debug, info, warn};
+use log::{debug, info, warn, trace};
 use parking_lot::RwLock;
 use tokio_stream::StreamExt;
 
@@ -495,7 +495,8 @@ impl Session {
                 let handle = handle.clone();
                 async move {
                     while let Some(peer) = dht_peer_rx.next().await {
-                        if handle.canceled() { // TODO: some sort of select ?
+                        if handle.canceled() {
+                            trace!("stopping peer adder for torrent {}", info_hash.as_string());
                             return Ok(());
                         }
                         handle.add_peer(peer);

@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, time::Duration, sync::{atomic::AtomicBool, Arc}};
+use std::{
+    net::SocketAddr,
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
 
 use anyhow::Context;
 use buffers::{ByteBuf, ByteString};
@@ -226,12 +230,14 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
                     }
                     Err(_) => {
                         if stop_writer.load(std::sync::atomic::Ordering::Relaxed) {
+                            trace!("closing writer for {}", self.info_hash.as_string());
                             anyhow::bail!("closing writer, stopping")
                         }
                         WriterRequest::Message(MessageOwned::KeepAlive)
-                    },
+                    }
                 };
                 if stop_writer.load(std::sync::atomic::Ordering::Relaxed) {
+                    trace!("closing writer for {}", self.info_hash.as_string());
                     anyhow::bail!("closing writer, stopping")
                 }
 
@@ -259,7 +265,7 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
                     }
                 };
 
-                debug!("sending to {}: {:?}, length={}", self.addr, &req, len);
+                trace!("sending to {}: {:?}, length={}", self.addr, &req, len);
 
                 with_timeout(rwtimeout, write_half.write_all(&write_buf[..len]))
                     .await
@@ -283,6 +289,7 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
                 trace!("received from {}: {:?}", self.addr, &message);
 
                 if stop_reader.load(std::sync::atomic::Ordering::Relaxed) {
+                    trace!("closing peer manager loop {}", self.info_hash.as_string());
                     anyhow::bail!("closing writer, stopping")
                 }
 
