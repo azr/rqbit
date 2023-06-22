@@ -347,7 +347,8 @@ async fn async_main(opts: Opts, spawner: BlockingSpawner) -> anyhow::Result<()> 
                 let mut added = false;
 
                 for path in &download_opts.torrent_path {
-                    let handle = match session.add_torrent(path, Some(torrent_opts.clone())).await {
+                    let torrent = session.parse_torrent(path).await?;
+                    let handle = match session.add_torrent(torrent, &torrent_opts.clone()).await {
                         Ok(v) => match v {
                             AddTorrentResponse::AlreadyManaged(handle) => {
                                 info!(
