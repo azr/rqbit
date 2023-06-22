@@ -3,7 +3,7 @@ use std::{
     fs::{File, OpenOptions},
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
 
@@ -137,7 +137,9 @@ impl TorrentManagerHandle {
         &self.manager.speed_estimator
     }
     pub fn cancel(&self) {
-        self.manager.stop.store(true, std::sync::atomic::Ordering::Relaxed)
+        self.manager
+            .stop
+            .store(true, std::sync::atomic::Ordering::Relaxed)
     }
     pub fn canceled(&self) -> bool {
         false

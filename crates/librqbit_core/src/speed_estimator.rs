@@ -55,7 +55,13 @@ impl SpeedEstimator {
         self.latest_per_second_snapshots.lock().clone()
     }
 
-    pub fn add_snapshot(&self, uploaded_bytes: u64, downloaded_bytes: u64, remaining_bytes: u64, instant: Instant) {
+    pub fn add_snapshot(
+        &self,
+        uploaded_bytes: u64,
+        downloaded_bytes: u64,
+        remaining_bytes: u64,
+        instant: Instant,
+    ) {
         let first = {
             let mut g = self.latest_per_second_snapshots.lock();
 

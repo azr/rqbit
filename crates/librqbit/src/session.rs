@@ -1,5 +1,12 @@
 use std::{
-    fs::File, io::Read, net::SocketAddr, ops::Deref, path::PathBuf, str::FromStr, time::Duration, sync::{atomic::AtomicBool, Arc},
+    fs::File,
+    io::Read,
+    net::SocketAddr,
+    ops::Deref,
+    path::PathBuf,
+    str::FromStr,
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -10,7 +17,7 @@ use librqbit_core::{
     peer_id::generate_peer_id,
     torrent_metainfo::{torrent_from_bytes, TorrentMetaV1, TorrentMetaV1Info, TorrentMetaV1Owned},
 };
-use log::{debug, info, warn, trace};
+use log::{debug, info, trace, warn};
 use parking_lot::RwLock;
 use tokio_stream::StreamExt;
 
@@ -73,9 +80,7 @@ impl SessionLocked {
             .find(|t| t.info_hash == info_hash.clone())
         {
             match &torrent.state {
-                ManagedTorrentState::Initializing => {
-                    StopTorrentResult::TorrentInitializing
-                }
+                ManagedTorrentState::Initializing => StopTorrentResult::TorrentInitializing,
                 ManagedTorrentState::Running(handle) => {
                     handle.cancel();
                     self.torrents.retain(|t| t.info_hash != info_hash.clone());
