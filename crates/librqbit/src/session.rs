@@ -99,7 +99,6 @@ pub struct Session {
     peer_opts: PeerConnectionOptions,
     spawner: BlockingSpawner,
     locked: RwLock<SessionLocked>,
-    output_folder: PathBuf,
 }
 
 async fn torrent_from_url(url: &str) -> anyhow::Result<TorrentMetaV1Owned> {
@@ -156,7 +155,7 @@ pub struct AddTorrentOptions {
     pub only_files_regex: Option<String>,
     pub overwrite: bool,
     pub list_only: bool,
-    pub output_folder: Option<String>,
+    pub output_folder: String,
     pub sub_folder: Option<String>,
     pub peer_opts: Option<PeerConnectionOptions>,
     pub force_tracker_interval: Option<Duration>,
@@ -238,11 +237,10 @@ impl TorrentMeta {
 }
 
 impl Session {
-    pub async fn new(output_folder: PathBuf, spawner: BlockingSpawner) -> anyhow::Result<Self> {
-        Self::new_with_opts(output_folder, spawner, SessionOptions::default()).await
+    pub async fn new(spawner: BlockingSpawner) -> anyhow::Result<Self> {
+        Self::new_with_opts(spawner, SessionOptions::default()).await
     }
     pub async fn new_with_opts(
-        output_folder: PathBuf,
         spawner: BlockingSpawner,
         opts: SessionOptions,
     ) -> anyhow::Result<Self> {
@@ -265,7 +263,6 @@ impl Session {
             dht,
             peer_opts,
             spawner,
-            output_folder,
             locked: RwLock::new(SessionLocked::default()),
         })
     }
@@ -407,10 +404,9 @@ impl Session {
         }
 
         let sub_folder = opts.sub_folder.map(PathBuf::from).unwrap_or_default();
-        let output_folder = opts
-            .output_folder
+        let output_folder = Some(opts.output_folder)
             .map(PathBuf::from)
-            .unwrap_or_else(|| self.output_folder.clone())
+            .unwrap()
             .join(sub_folder);
 
         let managed_torrent = ManagedTorrent {

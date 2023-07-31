@@ -183,7 +183,7 @@ pub struct ApiAddTorrentResponse {
 #[derive(Serialize, Deserialize)]
 pub struct TorrentAddQueryParams {
     pub overwrite: Option<bool>,
-    pub output_folder: Option<String>,
+    pub output_folder: String,
     pub sub_folder: Option<String>,
     pub only_files_regex: Option<String>,
     pub list_only: Option<bool>,
